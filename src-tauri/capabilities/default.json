@@ -1,0 +1,9 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability — grants the main window access to core IPC (invoke/listen).",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

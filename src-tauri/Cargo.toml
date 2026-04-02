@@ -1,0 +1,38 @@
+[package]
+name = "nexusedr"
+version = "0.1.0"
+edition = "2021"
+# Prevents Cargo from auto-publishing to crates.io
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# Required by Tauri v2: the lib crate is used for mobile targets and testing.
+name = "nexusedr_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri    = { version = "2", features = [] }
+serde    = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Cross-platform process enumeration, CPU%, RAM, disk I/O
+sysinfo = "0.32"
+
+# Cross-platform socket table enumeration (netstat-like, Phase 3 network tab)
+netstat2 = "0.9"
+
+# Async runtime (Tauri v2's internal runtime is tokio-based; we use it directly)
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
+
+# Windows-only: direct Win32 API for kill / suspend without extra sysinfo overhead
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
