@@ -14,6 +14,17 @@ fn main() {
             commands::network::get_network_connections,
             commands::control::kill_process,
             commands::control::suspend_thread,
+            // Phase 4 — SHA-256 hashing, host isolation
+            commands::hashing::hash_file,
+            commands::control::isolate_host,
+            commands::control::un_isolate_host,
+            // Phase 5 — settings persistence + DB stats
+            commands::settings::load_settings,
+            commands::settings::save_settings,
+            commands::settings::get_db_stats,
+            // Phase 6 — IOC database persistence
+            commands::ioc::load_ioc_db,
+            commands::ioc::save_ioc_db,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

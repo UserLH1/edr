@@ -1,9 +1,5 @@
 /**
- * lib/ipc.ts — typed wrappers around @tauri-apps/api.
- *
- * This is the ONLY file that calls `invoke` or `listen` directly.
- * All other code goes through this module so the full IPC surface is in one
- * place and easy to mock during Vite-only development.
+ * lib/ipc.ts — single IPC boundary for all Tauri invoke/listen calls.
  */
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
@@ -13,7 +9,7 @@ export const IS_TAURI =
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
 
-// ── Types matching Rust structs (serde rename_all = "camelCase") ──────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface SystemMetrics {
   cpuPercent: number
@@ -23,19 +19,16 @@ export interface SystemMetrics {
   diskWriteMbS: number
 }
 
-/**
- * Per-process record sent from Rust.
- * Field names mirror the Rust `ProcessInfo` struct with `#[serde(rename_all = "camelCase")]`.
- */
+/** Payload of the `system_update` push event (emitted every 2 s by the worker). */
+export interface SystemUpdateEvent extends SystemMetrics {
+  timestamp: number
+}
+
 export interface ProcessInfo {
-  /** Graph node id — "n{pid}" */
   id: string
   processName: string
-  /** Formatted label — "PID 1234" */
   pid: string
-  /** Raw numeric PID — used for edge construction and inspector lookup. */
   pidNum: number
-  /** Parent PID if it's in the current filtered set; null otherwise. */
   parentPid: number | null
   threatLevel: "safe" | "warning" | "critical"
   iconType: "terminal" | "globe" | "server"
@@ -44,16 +37,11 @@ export interface ProcessInfo {
   memMb: number
   cmdline: string
   threatScore: number
-  // ── Phase 3 extended fields ───────────────────────────────────────────────
-  /** OS username (e.g. "SYSTEM", "DOMAIN\\user") */
   user: string
-  /** Unix timestamp (seconds) when the process started */
   startedAt: number
-  /** Thread count; 0 on Windows until Phase 4 */
   threadCount: number
 }
 
-/** Payload of the `process_update` event emitted by the Rust background worker. */
 export interface ProcessUpdateEvent {
   processes: ProcessInfo[]
   newPids: number[]
@@ -61,80 +49,90 @@ export interface ProcessUpdateEvent {
   timestamp: number
 }
 
-/** One socket entry from the OS socket table (Phase 3 network tab). */
 export interface ConnectionInfo {
   pid: number
   proto: "TCP" | "UDP"
   localAddr: string
   remoteAddr: string
-  /** TCP state in ALLCAPS (e.g. "ESTABLISHED", "LISTEN"), or "LISTEN" for UDP */
   state: string
 }
 
-// ── Mock fallback data (used when IS_TAURI === false) ─────────────────────────
+export interface DbStats {
+  path: string
+  sizeMb: number
+  connected: boolean
+}
+
+// ── Mock data ─────────────────────────────────────────────────────────────────
 
 const MOCK_METRICS: SystemMetrics = {
-  cpuPercent: 8,
-  ramUsedGb: 3.1,
-  ramTotalGb: 16,
-  diskReadMbS: 0,
-  diskWriteMbS: 0,
+  cpuPercent: 8, ramUsedGb: 3.1, ramTotalGb: 16,
+  diskReadMbS: 0, diskWriteMbS: 0,
 }
 
-// ── Commands (request / response) ────────────────────────────────────────────
+// ── Commands ──────────────────────────────────────────────────────────────────
 
 export const ipc = {
-  /** One-shot CPU / RAM snapshot. */
-  getSystemMetrics: (): Promise<SystemMetrics> => {
-    if (!IS_TAURI) return Promise.resolve(MOCK_METRICS)
-    return invoke<SystemMetrics>("get_system_metrics")
-  },
+  getSystemMetrics: (): Promise<SystemMetrics> =>
+    IS_TAURI ? invoke<SystemMetrics>("get_system_metrics") : Promise.resolve(MOCK_METRICS),
+
+  getActiveProcesses: (): Promise<ProcessInfo[]> =>
+    IS_TAURI ? invoke<ProcessInfo[]>("get_active_processes") : Promise.resolve([]),
+
+  getNetworkConnections: (): Promise<ConnectionInfo[]> =>
+    IS_TAURI ? invoke<ConnectionInfo[]>("get_network_connections") : Promise.resolve([]),
+
+  killProcess: (pid: number): Promise<void> =>
+    IS_TAURI ? invoke<void>("kill_process", { pid }) : Promise.resolve(),
+
+  suspendThread: (pid: number): Promise<void> =>
+    IS_TAURI ? invoke<void>("suspend_thread", { pid }) : Promise.resolve(),
+
+  /** Compute SHA-256 of a file at the given path. Returns 64-char hex string. */
+  hashFile: (path: string): Promise<string> =>
+    IS_TAURI ? invoke<string>("hash_file", { path }) : Promise.resolve(""),
 
   /**
-   * One-shot process snapshot used to hydrate the graph on mount.
-   * Returns [] when running outside of Tauri (graph uses INITIAL_NODES mock).
+   * Block all inbound/outbound traffic via OS firewall.
+   * Requires administrator / root privileges.
    */
-  getActiveProcesses: (): Promise<ProcessInfo[]> => {
-    if (!IS_TAURI) return Promise.resolve([])
-    return invoke<ProcessInfo[]>("get_active_processes")
-  },
+  isolateHost: (): Promise<void> =>
+    IS_TAURI ? invoke<void>("isolate_host") : Promise.resolve(),
 
-  /**
-   * Returns the full OS socket table.
-   * Frontend filters by `pid` to show per-process connections.
-   */
-  getNetworkConnections: (): Promise<ConnectionInfo[]> => {
-    if (!IS_TAURI) return Promise.resolve([])
-    return invoke<ConnectionInfo[]>("get_network_connections")
-  },
+  /** Restore default firewall policy (block inbound, allow outbound). */
+  unIsolateHost: (): Promise<void> =>
+    IS_TAURI ? invoke<void>("un_isolate_host") : Promise.resolve(),
 
-  /**
-   * Terminates the process with the given PID.
-   * Uses TerminateProcess on Windows, SIGKILL on Unix.
-   */
-  killProcess: (pid: number): Promise<void> => {
-    if (!IS_TAURI) return Promise.resolve()
-    return invoke<void>("kill_process", { pid })
-  },
+  /** Load persisted settings JSON from AppData. Returns empty string if not yet saved. */
+  loadSettings: (): Promise<string> =>
+    IS_TAURI ? invoke<string>("load_settings") : Promise.resolve(""),
 
-  /**
-   * Suspends all threads of the process with the given PID.
-   * Windows: SuspendThread per thread via ToolHelp32.
-   * Unix: SIGSTOP.
-   */
-  suspendThread: (pid: number): Promise<void> => {
-    if (!IS_TAURI) return Promise.resolve()
-    return invoke<void>("suspend_thread", { pid })
-  },
+  /** Persist settings JSON to AppData/NexusEDR/settings.json. */
+  saveSettings: (json: string): Promise<void> =>
+    IS_TAURI ? invoke<void>("save_settings", { json }) : Promise.resolve(),
+
+  /** Return size / connectivity of the local EDR database file. */
+  getDbStats: (): Promise<DbStats> =>
+    IS_TAURI
+      ? invoke<DbStats>("get_db_stats")
+      : Promise.resolve({ path: "—", sizeMb: 0, connected: false }),
+
+  /** Load persisted IOC database JSON from AppData. Returns empty string if not yet saved. */
+  loadIocDb: (): Promise<string> =>
+    IS_TAURI ? invoke<string>("load_ioc_db") : Promise.resolve(""),
+
+  /** Persist IOC database JSON to AppData/NexusEDR/ioc_db.json. */
+  saveIocDb: (json: string): Promise<void> =>
+    IS_TAURI ? invoke<void>("save_ioc_db", { json }) : Promise.resolve(),
 }
 
-// ── Events (push from Rust background worker) ────────────────────────────────
+// ── Events (push from Rust worker) ───────────────────────────────────────────
 
 export const events = {
-  /**
-   * Subscribe to the `process_update` event stream.
-   * Returns a Promise that resolves to an unlisten function.
-   */
   onProcessUpdate: (cb: (payload: ProcessUpdateEvent) => void) =>
     listen<ProcessUpdateEvent>("process_update", e => cb(e.payload)),
+
+  /** Live CPU/RAM/disk I/O pushed every 2 s from the background worker. */
+  onSystemUpdate: (cb: (payload: SystemUpdateEvent) => void) =>
+    listen<SystemUpdateEvent>("system_update", e => cb(e.payload)),
 }

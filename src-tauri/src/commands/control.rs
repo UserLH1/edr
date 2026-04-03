@@ -1,8 +1,4 @@
-/// Process control commands: kill and suspend.
-///
-/// Kill uses Win32 TerminateProcess on Windows, SIGKILL on Unix.
-/// Suspend enumerates all threads via ToolHelp32 and calls SuspendThread on
-/// each one (Windows), or sends SIGSTOP on Unix.
+use std::process::Command;
 
 // ── Kill ─────────────────────────────────────────────────────────────────────
 
@@ -17,36 +13,21 @@ fn kill_impl(pid: u32) -> Result<(), String> {
     use windows_sys::Win32::System::Threading::{
         OpenProcess, TerminateProcess, PROCESS_TERMINATE,
     };
-
     unsafe {
         let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
         if handle == 0 {
-            return Err(format!(
-                "OpenProcess failed for PID {pid} — access denied or process not found"
-            ));
+            return Err(format!("OpenProcess failed for PID {pid}: access denied or not found"));
         }
         let ok = TerminateProcess(handle, 1);
         CloseHandle(handle);
-        if ok == 0 {
-            Err(format!("TerminateProcess failed for PID {pid}"))
-        } else {
-            Ok(())
-        }
+        if ok == 0 { Err(format!("TerminateProcess failed for PID {pid}")) } else { Ok(()) }
     }
 }
 
 #[cfg(not(target_os = "windows"))]
 fn kill_impl(pid: u32) -> Result<(), String> {
-    use std::process::Command;
-    let status = Command::new("kill")
-        .args(["-9", &pid.to_string()])
-        .status()
-        .map_err(|e| e.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("kill -9 {pid} failed with status {status}"))
-    }
+    let s = Command::new("kill").args(["-9", &pid.to_string()]).status().map_err(|e| e.to_string())?;
+    if s.success() { Ok(()) } else { Err(format!("kill -9 {pid} failed")) }
 }
 
 // ── Suspend ───────────────────────────────────────────────────────────────────
@@ -63,18 +44,14 @@ fn suspend_impl(pid: u32) -> Result<(), String> {
         CreateToolhelp32Snapshot, Thread32First, Thread32Next, THREADENTRY32, TH32CS_SNAPTHREAD,
     };
     use windows_sys::Win32::System::Threading::{OpenThread, SuspendThread, THREAD_SUSPEND_RESUME};
-
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
         if snap == INVALID_HANDLE_VALUE {
             return Err("CreateToolhelp32Snapshot failed".to_string());
         }
-
         let mut entry: THREADENTRY32 = std::mem::zeroed();
         entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
-
         let mut suspended = 0u32;
-
         if Thread32First(snap, &mut entry) != 0 {
             loop {
                 if entry.th32OwnerProcessID == pid {
@@ -85,34 +62,78 @@ fn suspend_impl(pid: u32) -> Result<(), String> {
                         suspended += 1;
                     }
                 }
-                // Reset dwSize before each iteration (required by the API)
                 entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
-                if Thread32Next(snap, &mut entry) == 0 {
-                    break;
-                }
+                if Thread32Next(snap, &mut entry) == 0 { break; }
             }
         }
-
         CloseHandle(snap);
-
-        if suspended == 0 {
-            Err(format!("No threads found / accessible for PID {pid}"))
-        } else {
-            Ok(())
-        }
+        if suspended == 0 { Err(format!("No threads found for PID {pid}")) } else { Ok(()) }
     }
 }
 
 #[cfg(not(target_os = "windows"))]
 fn suspend_impl(pid: u32) -> Result<(), String> {
-    use std::process::Command;
-    let status = Command::new("kill")
-        .args(["-STOP", &pid.to_string()])
+    let s = Command::new("kill").args(["-STOP", &pid.to_string()]).status().map_err(|e| e.to_string())?;
+    if s.success() { Ok(()) } else { Err(format!("SIGSTOP {pid} failed")) }
+}
+
+// ── Host isolation (PANIC button) ─────────────────────────────────────────────
+
+/// Blocks all inbound and outbound network traffic via the OS firewall.
+/// Requires administrator / root privileges.
+/// The Tauri app itself continues to function (IPC uses local named pipes / sockets).
+#[tauri::command]
+pub fn isolate_host() -> Result<(), String> {
+    isolate_impl()
+}
+
+/// Restores the default firewall policy (block inbound, allow outbound).
+#[tauri::command]
+pub fn un_isolate_host() -> Result<(), String> {
+    un_isolate_impl()
+}
+
+#[cfg(target_os = "windows")]
+fn isolate_impl() -> Result<(), String> {
+    // Block ALL inbound + outbound on all profiles (domain, private, public)
+    let s = Command::new("netsh")
+        .args(["advfirewall", "set", "allprofiles", "firewallpolicy", "blockinbound,blockoutbound"])
         .status()
         .map_err(|e| e.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("SIGSTOP for PID {pid} failed with status {status}"))
+    if s.success() { Ok(()) } else { Err("netsh isolate failed — run as Administrator".to_string()) }
+}
+
+#[cfg(target_os = "windows")]
+fn un_isolate_impl() -> Result<(), String> {
+    // Restore Windows default: block unsolicited inbound, allow outbound
+    let s = Command::new("netsh")
+        .args(["advfirewall", "set", "allprofiles", "firewallpolicy", "blockinbound,allowoutbound"])
+        .status()
+        .map_err(|e| e.to_string())?;
+    if s.success() { Ok(()) } else { Err("netsh un-isolate failed — run as Administrator".to_string()) }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn isolate_impl() -> Result<(), String> {
+    // Drop all traffic on Linux/macOS via iptables / pfctl
+    for args in [
+        vec!["-P", "INPUT",   "DROP"],
+        vec!["-P", "OUTPUT",  "DROP"],
+        vec!["-P", "FORWARD", "DROP"],
+    ] {
+        Command::new("iptables").args(&args).status().map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn un_isolate_impl() -> Result<(), String> {
+    for args in [
+        vec!["-P", "INPUT",   "ACCEPT"],
+        vec!["-P", "OUTPUT",  "ACCEPT"],
+        vec!["-P", "FORWARD", "ACCEPT"],
+    ] {
+        Command::new("iptables").args(&args).status().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

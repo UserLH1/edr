@@ -1,9 +1,12 @@
 import * as React from 'react'
-import {
-  ThemeProvider as NextThemesProvider,
-  type ThemeProviderProps,
-} from 'next-themes'
 
-export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
-  return <NextThemesProvider {...props}>{children}</NextThemesProvider>
+// NexusEDR always runs in dark mode — no runtime theme switching needed.
+// This stub exists to satisfy any shadcn components that reference ThemeProvider.
+interface ThemeProviderProps {
+  children: React.ReactNode
+  [key: string]: unknown
+}
+
+export function ThemeProvider({ children }: ThemeProviderProps) {
+  return <>{children}</>
 }

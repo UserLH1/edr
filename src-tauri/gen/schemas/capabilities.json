@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability — grants the main window access to core IPC (invoke/listen).","local":true,"windows":["main"],"permissions":["core:default"]}}

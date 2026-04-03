@@ -26,6 +26,10 @@ sysinfo = "0.32"
 # Cross-platform socket table enumeration (netstat-like, Phase 3 network tab)
 netstat2 = "0.9"
 
+# SHA-256 file hashing for ProcessInspector (Phase 4)
+sha2 = "0.10"
+hex  = "0.4"
+
 # Async runtime (Tauri v2's internal runtime is tokio-based; we use it directly)
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
 

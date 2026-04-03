@@ -5,7 +5,6 @@ import {
   Terminal,
   Globe,
   Server,
-  Cpu,
   Search,
   Filter,
   GitBranch,
@@ -15,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { useProcessGraph } from "@/hooks/use-process-graph"
+import { ExportButton } from "@/components/edr/export-button"
 import type { ProcessInfo } from "@/lib/ipc"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -200,6 +200,21 @@ export function ProcessTreeView() {
   const suspicious = processes.filter(p => p.threatLevel === "warning").length
   const malicious  = processes.filter(p => p.threatLevel === "critical").length
 
+  const exportData = processes.map(p => ({
+    pid:         p.pidNum,
+    parentPid:   p.parentPid ?? "",
+    name:        p.processName,
+    user:        p.user,
+    threat:      p.threatLevel,
+    threatScore: p.threatScore,
+    cpu:         p.cpuPercent,
+    memMb:       p.memMb,
+    threads:     p.threadCount,
+    startedAt:   p.startedAt,
+    exePath:     p.exePath,
+    cmdline:     p.cmdline,
+  }))
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden bg-zinc-950 bg-grid-pattern">
       {/* Header bar */}
@@ -224,6 +239,7 @@ export function ProcessTreeView() {
           <Filter className="w-3 h-3" />
           Filters
         </button>
+        <ExportButton data={exportData} filename="process_snapshot" label="Export" />
       </div>
 
       {/* Table */}

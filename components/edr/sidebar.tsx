@@ -6,10 +6,18 @@ import {
   Settings2,
   Activity,
   Database,
+  Wifi,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useGlobalThreatScore } from "@/hooks/use-global-threat-score"
 
-export type ViewId = "endpoint-map" | "subnet-scanner" | "process-tree" | "ioc-matches" | "settings"
+export type ViewId =
+  | "endpoint-map"
+  | "subnet-scanner"
+  | "network-connections"
+  | "process-tree"
+  | "ioc-matches"
+  | "settings"
 
 type NavItem = {
   icon: React.ElementType
@@ -18,17 +26,18 @@ type NavItem = {
 }
 
 const threatHunting: NavItem[] = [
-  { icon: Network,    label: "Endpoint Map",  viewId: "endpoint-map" },
-  { icon: GitBranch,  label: "Process Tree",  viewId: "process-tree" },
+  { icon: Network,   label: "Endpoint Map", viewId: "endpoint-map" },
+  { icon: GitBranch, label: "Process Tree", viewId: "process-tree" },
 ]
 
 const networkRecon: NavItem[] = [
-  { icon: ScanLine, label: "Subnet Scanner", viewId: "subnet-scanner" },
+  { icon: Wifi,     label: "Net Connections", viewId: "network-connections" },
+  { icon: ScanLine, label: "Subnet Scanner",  viewId: "subnet-scanner"      },
 ]
 
 const intelligence: NavItem[] = [
   { icon: ShieldCheck, label: "IoC Matches", viewId: "ioc-matches" },
-  { icon: Settings2,   label: "Settings",    viewId: "settings" },
+  { icon: Settings2,   label: "Settings",    viewId: "settings"    },
 ]
 
 function NavSection({
@@ -78,6 +87,66 @@ function NavSection({
   )
 }
 
+// ── Agent Status Tray with live threat score ───────────────────────────────────
+
+function AgentStatusTray() {
+  const threat = useGlobalThreatScore()
+
+  const barColor =
+    threat.label === "CRITICAL" ? "bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]"
+    : threat.label === "WARNING"  ? "bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.4)]"
+    : "bg-emerald-500 shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+
+  return (
+    <div className="border-t border-zinc-800/50 p-3 bg-zinc-950/40">
+      <div className="flex items-center gap-2 mb-2">
+        <Activity className="w-3 h-3 text-emerald-400 shrink-0" />
+        <span className="text-[10px] font-mono font-semibold text-zinc-400 uppercase tracking-wider">
+          Agent Status
+        </span>
+      </div>
+
+      {/* Global Threat Score — live from useProcessGraph */}
+      <div className="mb-2">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] font-mono text-zinc-500">Global Threat Score</span>
+          <span className={`text-[10px] font-mono font-semibold ${threat.colorClass}`}>
+            {threat.score}/100
+          </span>
+        </div>
+        <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+            style={{ width: `${Math.max(2, threat.score)}%` }}
+            role="progressbar"
+            aria-valuenow={threat.score}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Global threat score: ${threat.score} out of 100`}
+          />
+        </div>
+        <div className="flex items-center justify-between mt-0.5">
+          <span className={`text-[9px] font-mono ${threat.colorClass}`}>
+            ({threat.label})
+          </span>
+          {(threat.criticalCount > 0 || threat.warningCount > 0) && (
+            <span className="text-[9px] font-mono text-zinc-600">
+              {threat.criticalCount > 0 && <span className="text-red-500">{threat.criticalCount}✕crit </span>}
+              {threat.warningCount > 0  && <span className="text-yellow-600">{threat.warningCount}✕warn</span>}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* DB Status */}
+      <div className="flex items-center gap-1.5">
+        <Database className="w-2.5 h-2.5 text-zinc-600 shrink-0" />
+        <span className="text-[9px] font-mono text-zinc-600">DB: Local SQLite connected</span>
+      </div>
+    </div>
+  )
+}
+
 export function Sidebar({
   activeView,
   onNavigate,
@@ -90,48 +159,12 @@ export function Sidebar({
       className="w-60 flex flex-col border-r border-zinc-800/50 bg-zinc-900/30 backdrop-blur-sm shrink-0 overflow-hidden"
       aria-label="Main navigation"
     >
-      {/* Navigation sections */}
       <nav className="flex-1 py-1 overflow-y-auto">
         <NavSection title="Threat Hunting" items={threatHunting} activeView={activeView} onNavigate={onNavigate} />
         <NavSection title="Network Recon"  items={networkRecon}  activeView={activeView} onNavigate={onNavigate} />
         <NavSection title="Intelligence"   items={intelligence}  activeView={activeView} onNavigate={onNavigate} />
       </nav>
-
-      {/* Bottom: Agent Status Tray */}
-      <div className="border-t border-zinc-800/50 p-3 bg-zinc-950/40">
-        <div className="flex items-center gap-2 mb-2">
-          <Activity className="w-3 h-3 text-emerald-400 shrink-0" />
-          <span className="text-[10px] font-mono font-semibold text-zinc-400 uppercase tracking-wider">
-            Agent Status
-          </span>
-        </div>
-
-        {/* Threat Score */}
-        <div className="mb-2">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-mono text-zinc-500">Global Threat Score</span>
-            <span className="text-[10px] font-mono text-emerald-400 font-semibold">14/100</span>
-          </div>
-          <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(52,211,153,0.5)] transition-all"
-              style={{ width: "14%" }}
-              role="progressbar"
-              aria-valuenow={14}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Global threat score: 14 out of 100"
-            />
-          </div>
-          <span className="text-[9px] font-mono text-emerald-500/70 mt-0.5 block">(Safe)</span>
-        </div>
-
-        {/* DB Status */}
-        <div className="flex items-center gap-1.5">
-          <Database className="w-2.5 h-2.5 text-zinc-600 shrink-0" />
-          <span className="text-[9px] font-mono text-zinc-600">DB: Local SQLite connected</span>
-        </div>
-      </div>
+      <AgentStatusTray />
     </aside>
   )
 }

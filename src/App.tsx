@@ -3,9 +3,11 @@ import { AppHeader } from "@/components/edr/app-header"
 import { Sidebar, type ViewId } from "@/components/edr/sidebar"
 import { MainCanvas } from "@/components/edr/main-canvas"
 import { SubnetDashboard } from "@/components/edr/subnet-dashboard"
+import { NetworkConnectionsView } from "@/components/edr/network-connections-view"
 import { ProcessTreeView } from "@/components/edr/process-tree-view"
 import { IocMatchesView } from "@/components/edr/ioc-matches-view"
 import { SettingsView } from "@/components/edr/settings-view"
+import { AlertOverlay } from "@/components/edr/alert-overlay"
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewId>("endpoint-map")
@@ -15,7 +17,9 @@ export default function App() {
       <AppHeader />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar activeView={activeView} onNavigate={setActiveView} />
-        {activeView === "subnet-scanner" ? (
+        {activeView === "network-connections" ? (
+          <NetworkConnectionsView />
+        ) : activeView === "subnet-scanner" ? (
           <SubnetDashboard />
         ) : activeView === "process-tree" ? (
           <ProcessTreeView />
@@ -27,6 +31,8 @@ export default function App() {
           <MainCanvas />
         )}
       </div>
+      {/* Floating threat alert stack — always mounted, manages its own subscription */}
+      <AlertOverlay />
     </div>
   )
 }
