@@ -7,6 +7,7 @@ import { NetworkConnectionsView } from "@/components/edr/network-connections-vie
 import { ProcessTreeView } from "@/components/edr/process-tree-view"
 import { IocMatchesView } from "@/components/edr/ioc-matches-view"
 import { SettingsView } from "@/components/edr/settings-view"
+import { NetworkGraphView } from "@/components/edr/network-graph-view"
 import { AlertOverlay } from "@/components/edr/alert-overlay"
 
 export default function App() {
@@ -19,6 +20,8 @@ export default function App() {
         <Sidebar activeView={activeView} onNavigate={setActiveView} />
         {activeView === "network-connections" ? (
           <NetworkConnectionsView />
+        ) : activeView === "network-graph" ? (
+          <NetworkGraphView />
         ) : activeView === "subnet-scanner" ? (
           <SubnetDashboard />
         ) : activeView === "process-tree" ? (

@@ -55,6 +55,10 @@ export interface ConnectionInfo {
   localAddr: string
   remoteAddr: string
   state: string
+  // Phase 6: enrichment fields (empty strings if GeoLite2 db not present or IP is private)
+  countryCode: string   // "US", "RO", "DE", … or ""
+  domainName: string    // reverse-DNS hostname, populated asynchronously
+  asnOrg: string        // autonomous system name, e.g. "GOOGLE", "AMAZON-02"
 }
 
 export interface DbStats {
@@ -102,6 +106,14 @@ export const ipc = {
   /** Restore default firewall policy (block inbound, allow outbound). */
   unIsolateHost: (): Promise<void> =>
     IS_TAURI ? invoke<void>("un_isolate_host") : Promise.resolve(),
+
+  /** Block all inbound/outbound traffic to/from a specific remote IP. Requires admin. */
+  blockRemoteIp: (ip: string): Promise<void> =>
+    IS_TAURI ? invoke<void>("block_remote_ip", { ip }) : Promise.resolve(),
+
+  /** Remove the firewall block rule for a specific remote IP. */
+  unblockRemoteIp: (ip: string): Promise<void> =>
+    IS_TAURI ? invoke<void>("unblock_remote_ip", { ip }) : Promise.resolve(),
 
   /** Load persisted settings JSON from AppData. Returns empty string if not yet saved. */
   loadSettings: (): Promise<string> =>

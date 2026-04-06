@@ -7,6 +7,7 @@ import {
   Activity,
   Database,
   Wifi,
+  Globe2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useGlobalThreatScore } from "@/hooks/use-global-threat-score"
@@ -15,6 +16,7 @@ export type ViewId =
   | "endpoint-map"
   | "subnet-scanner"
   | "network-connections"
+  | "network-graph"
   | "process-tree"
   | "ioc-matches"
   | "settings"
@@ -32,6 +34,7 @@ const threatHunting: NavItem[] = [
 
 const networkRecon: NavItem[] = [
   { icon: Wifi,     label: "Net Connections", viewId: "network-connections" },
+  { icon: Globe2,   label: "Net Topology",    viewId: "network-graph"       },
   { icon: ScanLine, label: "Subnet Scanner",  viewId: "subnet-scanner"      },
 ]
 

@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::process::Command;
 
 // ── Kill ─────────────────────────────────────────────────────────────────────
@@ -134,6 +135,83 @@ fn un_isolate_impl() -> Result<(), String> {
         vec!["-P", "FORWARD", "ACCEPT"],
     ] {
         Command::new("iptables").args(&args).status().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// ── Per-IP blocking ───────────────────────────────────────────────────────────
+
+/// Adds inbound + outbound firewall rules that drop all traffic to/from `ip`.
+/// Rule names: "NexusEDR_Block_<ip>_out" / "NexusEDR_Block_<ip>_in".
+/// Requires administrator / root privileges.
+#[tauri::command]
+pub fn block_remote_ip(ip: String) -> Result<(), String> {
+    ip.parse::<IpAddr>().map_err(|_| format!("Invalid IP address: {ip}"))?;
+    block_ip_impl(&ip)
+}
+
+/// Removes the firewall rules added by `block_remote_ip`.
+#[tauri::command]
+pub fn unblock_remote_ip(ip: String) -> Result<(), String> {
+    ip.parse::<IpAddr>().map_err(|_| format!("Invalid IP address: {ip}"))?;
+    unblock_ip_impl(&ip)
+}
+
+// Safe rule-name: replace dots/colons with underscores.
+fn rule_name(ip: &str, dir: &str) -> String {
+    let safe = ip.replace('.', "_").replace(':', "_");
+    format!("NexusEDR_Block_{safe}_{dir}")
+}
+
+#[cfg(target_os = "windows")]
+fn block_ip_impl(ip: &str) -> Result<(), String> {
+    for (dir, dir_flag) in &[("out", "out"), ("in", "in")] {
+        let s = Command::new("netsh")
+            .args(["advfirewall", "firewall", "add", "rule",
+                   &format!("name={}", rule_name(ip, dir)),
+                   &format!("dir={dir_flag}"),
+                   "action=block",
+                   &format!("remoteip={ip}")])
+            .status()
+            .map_err(|e| e.to_string())?;
+        if !s.success() {
+            return Err(format!("Failed to block {dir} traffic to {ip} — run as Administrator"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn unblock_ip_impl(ip: &str) -> Result<(), String> {
+    for dir in &["out", "in"] {
+        // Ignore errors on delete — rule may not exist.
+        let _ = Command::new("netsh")
+            .args(["advfirewall", "firewall", "delete", "rule",
+                   &format!("name={}", rule_name(ip, dir))])
+            .status();
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn block_ip_impl(ip: &str) -> Result<(), String> {
+    for args in [
+        vec!["-A", "OUTPUT", "-d", ip, "-j", "DROP"],
+        vec!["-A", "INPUT",  "-s", ip, "-j", "DROP"],
+    ] {
+        let s = Command::new("iptables").args(&args).status().map_err(|e| e.to_string())?;
+        if !s.success() { return Err(format!("iptables block failed for {ip}")); }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn unblock_ip_impl(ip: &str) -> Result<(), String> {
+    for args in [
+        vec!["-D", "OUTPUT", "-d", ip, "-j", "DROP"],
+        vec!["-D", "INPUT",  "-s", ip, "-j", "DROP"],
+    ] {
+        let _ = Command::new("iptables").args(&args).status();
     }
     Ok(())
 }

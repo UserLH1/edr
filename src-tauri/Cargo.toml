@@ -33,6 +33,12 @@ hex  = "0.4"
 # Async runtime (Tauri v2's internal runtime is tokio-based; we use it directly)
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
 
+# Phase 6 — GeoIP enrichment (reads local GeoLite2-Country.mmdb / GeoLite2-ASN.mmdb)
+maxminddb = "0.24"
+
+# Phase 6 — Reverse DNS (synchronous OS resolver, run via spawn_blocking)
+dns-lookup = "2"
+
 # Windows-only: direct Win32 API for kill / suspend without extra sysinfo overhead
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = [

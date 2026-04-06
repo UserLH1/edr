@@ -23,6 +23,14 @@ const SUSPICIOUS_PORTS = new Set([
   9999, 5555, 8888, 2222, 7777,
 ])
 
+function countryFlag(code: string): string {
+  if (!code || code.length !== 2) return ""
+  return String.fromCodePoint(
+    code.charCodeAt(0) + 0x1f1e6 - 65,
+    code.charCodeAt(1) + 0x1f1e6 - 65,
+  )
+}
+
 function remotePort(addr: string): number {
   return parseInt(addr.split(":").pop() ?? "0") || 0
 }
@@ -207,7 +215,10 @@ export function NetworkConnectionsView() {
           r.remoteAddr.includes(q) ||
           r.processName.toLowerCase().includes(q) ||
           String(r.pid).includes(q) ||
-          r.state.toLowerCase().includes(q)
+          r.state.toLowerCase().includes(q) ||
+          r.domainName.toLowerCase().includes(q) ||
+          r.asnOrg.toLowerCase().includes(q) ||
+          r.countryCode.toLowerCase().includes(q)
       )
     }
 
@@ -306,6 +317,7 @@ export function NetworkConnectionsView() {
         <ExportButton
           data={filtered.map(r => ({
             proto: r.proto, localAddr: r.localAddr, remoteAddr: r.remoteAddr,
+            domain: r.domainName || "", country: r.countryCode || "", asn: r.asnOrg || "",
             state: r.state, pid: r.pid, process: r.processName,
             threat: r.threatLevel, threatScore: r.threatScore, flagged: r.flagged,
           }))}
@@ -327,6 +339,9 @@ export function NetworkConnectionsView() {
               <SortTh label="Proto"   sortKey="proto"       current={sortKey} dir={sortDir} onSort={handleSort} />
               <SortTh label="Local"   sortKey="localAddr"   current={sortKey} dir={sortDir} onSort={handleSort} />
               <SortTh label="Remote"  sortKey="remoteAddr"  current={sortKey} dir={sortDir} onSort={handleSort} />
+              <th className="px-3 py-1.5 text-[9px] font-mono font-semibold uppercase tracking-wider text-zinc-600 whitespace-nowrap">
+                Host / ASN
+              </th>
               <SortTh label="State"   sortKey="state"       current={sortKey} dir={sortDir} onSort={handleSort} />
               <SortTh label="Process" sortKey="processName" current={sortKey} dir={sortDir} onSort={handleSort} />
               <SortTh label="Threat"  sortKey="threat"      current={sortKey} dir={sortDir} onSort={handleSort} />
@@ -335,7 +350,7 @@ export function NetworkConnectionsView() {
           <tbody>
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-zinc-600 text-xs font-mono">
+                <td colSpan={7} className="px-4 py-10 text-center text-zinc-600 text-xs font-mono">
                   {connections.length === 0
                     ? "No data — open the Tauri native window, not the browser tab."
                     : "No connections match the current filters."}
@@ -398,6 +413,33 @@ export function NetworkConnectionsView() {
                         </span>
                       )}
                     </span>
+                  </td>
+
+                  {/* Host / ASN (GeoIP enrichment) */}
+                  <td className="px-3 py-1.5 font-mono text-[11px] max-w-[180px]">
+                    {row.countryCode || row.domainName || row.asnOrg ? (
+                      <div className="flex flex-col gap-0.5">
+                        {(row.countryCode || row.domainName) && (
+                          <span className="flex items-center gap-1 text-zinc-300 truncate">
+                            {row.countryCode && (
+                              <span className="text-[14px] leading-none shrink-0">
+                                {countryFlag(row.countryCode)}
+                              </span>
+                            )}
+                            <span className="truncate text-[10px] text-zinc-400">
+                              {row.domainName || row.remoteAddr.split(":")[0]}
+                            </span>
+                          </span>
+                        )}
+                        {row.asnOrg && (
+                          <span className="text-[9px] text-zinc-600 truncate">
+                            {row.asnOrg}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-zinc-700">—</span>
+                    )}
                   </td>
 
                   {/* State */}
