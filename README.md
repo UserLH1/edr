@@ -144,8 +144,4 @@ The IOC database is a plain JSON file stored under the OS app-data directory (e.
 
 NexusEDR is a **research and educational** project. Run it only on systems you own or are explicitly authorized to monitor. Response actions such as killing processes, suspending threads and modifying firewall rules require administrator privileges and can affect the stability of the host; use them with care.
 
----
 
-## License
-
-TBD: add a license of your choice (MIT / Apache-2.0 are common for open-source tooling) before publishing.
