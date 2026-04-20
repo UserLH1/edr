@@ -1,0 +1,93 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NexusEDR — Release workflow
+#
+# Triggers:
+#   • git push v<semver> tag  →  builds installer + creates GitHub Release
+#   • manual dispatch from GitHub UI (Actions → Run workflow)
+#
+# Usage:
+#   git tag v0.2.0 -m "Release v0.2.0"
+#   git push origin v0.2.0
+#
+# The action uploads:
+#   • NexusEDR_<version>_x64-setup.exe   (NSIS installer — recommended)
+#   • NexusEDR_<version>_x64_en-US.msi   (MSI for enterprise / GPO)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag (e.g. v0.2.0)"
+        required: true
+        default: "v0.1.0"
+
+jobs:
+  build-windows:
+    name: Build & Release (Windows x64)
+    runs-on: windows-latest
+    permissions:
+      contents: write   # needed to create GitHub Releases
+
+    steps:
+      # ── 1. Source ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js ───────────────────────────────────────────────────────────
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # ── 3. Rust stable ───────────────────────────────────────────────────────
+      - name: Set up Rust (stable, MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # Cache compiled Rust deps — speeds up subsequent builds significantly
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      # ── 4. Frontend deps ─────────────────────────────────────────────────────
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── 5. Build + publish release ───────────────────────────────────────────
+      - name: Build Tauri app and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name || inputs.tag }}
+          releaseName: "NexusEDR ${{ github.ref_name || inputs.tag }}"
+          releaseBody: |
+            ## NexusEDR ${{ github.ref_name || inputs.tag }}
+
+            ### Download
+            | File | Description |
+            |------|-------------|
+            | `*_x64-setup.exe` | **Recommended** — NSIS installer with wizard |
+            | `*_x64_en-US.msi` | MSI package for enterprise / Group Policy deployment |
+
+            ### First-run setup (GeoIP enrichment)
+            To enable country flags and ASN names in the Network Topology view:
+            1. Create a free account at https://www.maxmind.com/en/geolite2/signup
+            2. Download **GeoLite2-Country.mmdb** and **GeoLite2-ASN.mmdb**
+            3. Place both files in `%APPDATA%\com.nexusedr.app\`
+            4. Restart NexusEDR — enrichment activates automatically
+
+            ### Notes
+            - Windows SmartScreen may warn about an unrecognised publisher — click **More info → Run anyway** (expected for unsigned builds)
+            - Firewall block/unblock commands require **Administrator** privileges
+          releaseDraft: false
+          prerelease: false

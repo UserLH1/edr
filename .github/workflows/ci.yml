@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NexusEDR — CI workflow
+#
+# Runs on every push to main and on pull requests.
+# Checks that the TypeScript + Vite frontend compiles and that Rust compiles.
+# Does NOT produce an installer — use the release workflow for that.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Build check (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: TypeScript + Vite build
+        run: npm run build:vite
+
+      - name: Rust check (no installer)
+        run: cargo check --manifest-path src-tauri/Cargo.toml
